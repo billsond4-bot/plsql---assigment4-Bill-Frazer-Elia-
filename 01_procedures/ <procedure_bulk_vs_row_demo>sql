@@ -48,3 +48,4 @@ EXCEPTION
     RAISE;
 END bulk_vs_row_demo;
 /
+
