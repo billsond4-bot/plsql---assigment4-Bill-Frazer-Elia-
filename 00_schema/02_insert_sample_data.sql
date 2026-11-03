@@ -24,3 +24,4 @@ INSERT INTO enrollments (student_id, course_id, semester, marks) VALUES (1001, '
 INSERT INTO enrollments (student_id, course_id, semester, marks) VALUES (1004, 'INSY8313', '2026-FALL', NULL);
 
 COMMIT;
+
