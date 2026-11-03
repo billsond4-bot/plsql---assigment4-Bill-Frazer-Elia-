@@ -1,0 +1,50 @@
+-- Compares row-by-row INSERT with FORALL INSERT on the scratch table perf_demo.
+-- Times are in hundredths of a second (DBMS_UTILITY.GET_TIME).
+CREATE OR REPLACE PROCEDURE bulk_vs_row_demo (
+  p_rows IN PLS_INTEGER DEFAULT 20000
+)
+AS
+  TYPE t_ids    IS TABLE OF perf_demo.id%TYPE    INDEX BY PLS_INTEGER;
+  TYPE t_labels IS TABLE OF perf_demo.label%TYPE INDEX BY PLS_INTEGER;
+  v_ids    t_ids;
+  v_labels t_labels;
+
+  v_start     NUMBER;
+  v_row_time  NUMBER;
+  v_bulk_time NUMBER;
+BEGIN
+  IF p_rows IS NULL OR p_rows < 1 THEN
+    RAISE_APPLICATION_ERROR(-20100, 'Number of rows must be at least 1.');
+  END IF;
+
+  DELETE FROM perf_demo;
+
+  -- 1) row by row: one PL/SQL -> SQL switch per row
+  v_start := DBMS_UTILITY.GET_TIME;
+  FOR i IN 1 .. p_rows LOOP
+    INSERT INTO perf_demo (id, label) VALUES (i, 'row ' || i);
+  END LOOP;
+  v_row_time := DBMS_UTILITY.GET_TIME - v_start;
+
+  DELETE FROM perf_demo;
+
+  -- 2) bulk: build the collections, then one FORALL = one switch
+  v_start := DBMS_UTILITY.GET_TIME;
+  FOR i IN 1 .. p_rows LOOP
+    v_ids(i)    := i;
+    v_labels(i) := 'row ' || i;
+  END LOOP;
+  FORALL i IN 1 .. p_rows
+    INSERT INTO perf_demo (id, label) VALUES (v_ids(i), v_labels(i));
+  v_bulk_time := DBMS_UTILITY.GET_TIME - v_start;
+
+  DELETE FROM perf_demo;
+
+  DBMS_OUTPUT.PUT_LINE('Rows inserted each way : ' || p_rows);
+  DBMS_OUTPUT.PUT_LINE('Row-by-row loop        : ' || v_row_time  || ' hsec');
+  DBMS_OUTPUT.PUT_LINE('FORALL bulk insert     : ' || v_bulk_time || ' hsec');
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE;
+END bulk_vs_row_demo;
+/
