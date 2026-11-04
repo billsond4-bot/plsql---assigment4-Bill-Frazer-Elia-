@@ -21,7 +21,7 @@ We picked it because every concept in the assignment has a natural place in it:
 - giving bonus marks or grade letters to a whole class is a bulk job, which is where `BULK COLLECT` and `FORALL` make sense;
 - registration has real rules (course full, student suspended, marks between 0 and 100), so exceptions are needed.
 
-### Requirements we set for ourselves
+### Requirements I set for ourselves
 
 1. Register a new student, and refuse duplicates or blank names.
 2. Enrol an active student in a course, refusing full courses and double enrolment.
