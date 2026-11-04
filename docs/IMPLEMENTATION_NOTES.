@@ -1,0 +1,68 @@
+# Implementation Notes
+
+## 1. Design decisions
+
+- **Procedures do not commit.** The caller decides when to commit or roll back. This lets the test scripts run and then undo their changes.
+- **Errors are never hidden.** Every `WHEN OTHERS` handler ends with `RAISE`. Functions raise an error instead of returning a made-up value (for example, `get_student_gpa` raises -20081 for a student with no grades instead of returning 0, because 0 would look like a real failing GPA).
+- **Business errors use `RAISE_APPLICATION_ERROR`** with codes in the -20000 to -20999 range so the caller sees a clear message.
+- **`grade_audit` has no foreign key** so the history stays even if an enrollment is deleted.
+
+## 2. Error codes
+
+| Code | Raised by | Meaning |
+|------|-----------|---------|
+| -20001 | register_student | blank name |
+| -20002 | register_student | duplicate student id or email |
+| -20010 / -20011 / -20012 / -20013 | enroll_student | student missing / not active / course full / already enrolled |
+| -20020 / -20021 | update_student_status | student missing / invalid status |
+| -20030 | drop_enrollment | enrollment missing |
+| -20031 | get_course_seats_left | course missing |
+| -20040 / -20041 | record_marks | marks out of range / enrollment missing |
+| -20050 | print_course_roster | nobody enrolled |
+| -20051 | print_student_transcript | student missing |
+| -20052 | report_top_students | no graded students |
+| -20060 / -20061 | convert_marks_to_grade | NULL marks / marks out of range |
+| -20070 / -20071 | bulk_apply_bonus | bad bonus / no graded rows |
+| -20080 / -20081 | get_student_gpa | student missing / no graded courses |
+| -20090 / -20091 | get_student_id_by_name | no match / more than one match |
+| -20100 | bulk_vs_row_demo | bad row count |
+
+## 3. Bulk processing and performance
+
+PL/SQL and SQL are two separate engines. Every time a PL/SQL loop runs a SQL statement, control
+switches from one engine to the other (a *context switch*). With a plain loop that updates
+20,000 rows, that is 20,000 switches. With `FORALL`, the whole collection is sent to the SQL engine in
+**one** switch, so the overhead nearly disappears. `BULK COLLECT` does the same in the other direction:
+all rows come back in one fetch instead of one fetch per row.
+
+What we used and why:
+
+- `bulk_apply_bonus`: `BULK COLLECT` into nested tables, then `FORALL ... SAVE EXCEPTIONS`. Without `SAVE EXCEPTIONS`, the first failing row stops the whole statement. With it, Oracle keeps going, finishes the good rows, and raises ORA-24381 at the end. We read `SQL%BULK_EXCEPTIONS` to find which rows failed and write them to `bulk_error_log`. In the sample data, Patrick Habimana has 98, a +5 bonus gives 103, which breaks `ck_enr_marks`, so exactly one row fails and two succeed.
+- `bulk_assign_grade_letters`: `BULK COLLECT ... LIMIT 50`. On a big table, fetching everything at once could use a lot of memory (PGA). `LIMIT` processes the data in batches. The loop exits on `v_ids.COUNT = 0`, not on `%NOTFOUND`, because the last batch can be smaller than the limit but still contain rows.
+- `bulk_vs_row_demo`: inserts the same rows twice, once in a plain loop and once with `FORALL`, and prints both timings. The exact numbers depend on the machine, but `FORALL` is normally several times faster. (Our own measured result: *fill in from your screenshot.*)
+
+Bulk processing is not always the answer. For a handful of rows the difference is not noticeable, and holding huge collections in memory can hurt, which is why `LIMIT` exists.
+
+## 4. Records and collections: which one and why
+
+- **User-defined record** (`record_marks`): groups old marks, new marks and new grade so they travel together.
+- **`%ROWTYPE`**: used when we need the whole row of a table or cursor (`students%ROWTYPE`, `enrollments%ROWTYPE`, `c_roster%ROWTYPE`), so the code follows the table if columns change.
+- **Associative array**: `print_student_transcript` uses `INDEX BY VARCHAR2` with a key such as `2026-FALL/INSY8311`, which keeps the lines sorted and gives direct access by key.
+- **Nested table**: size is not known in advance, and we fill it with `BULK COLLECT`.
+- **VARRAY(3)**: the "top 3" list has a natural fixed maximum.
+
+## 5. Cursors
+
+- Implicit: `SQL%ROWCOUNT`, `SQL%FOUND` and `SQL%NOTFOUND` after INSERT, UPDATE and DELETE.
+- Explicit: `c_roster` is parameterised and handled by hand with OPEN / FETCH / CLOSE. The handler closes it if an error happens (`%ISOPEN`).
+- Cursor FOR loop: used where we simply need every row once.
+
+## 6. Known limits
+
+- Grading scale and GPA points are our own assumption, not an official AUCA scale.
+- No concurrency tests beyond `SELECT ... FOR UPDATE` in `record_marks`.
+- Seat checking in `enroll_student` is not fully safe if two users enrol the last seat at the same moment; a real system would lock the course row first.
+
+## 7. Test evidence
+
+Screenshots of every test output are in `screenshots/` (named `<test_name>_output.png`).
