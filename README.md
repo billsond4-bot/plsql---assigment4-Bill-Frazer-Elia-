@@ -8,10 +8,8 @@ My project is a student registration and grading system for a university. It sto
 
 ## Group members
 
-| Name | Student ID | Class group |
-|------|-----------|-------------|
-| (full name 1) | (ID 1) | (I / B / C / D) |
-| (full name 2) | (ID 2) | (I / B / C / D) |
+| Name            | Student ID | Class group |
+|BILL FRAZER ELIA |20252SEN030 | C
 
 ## What the application does
 
